@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>JARVIS</title>
+<style>
+:root{--bg:#04080f;--tx:#e6f6ff;--mut:#7fa3b8;--c:#22d3ee;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:radial-gradient(ellipse at 50% 30%,#0a1a2c 0%,var(--bg) 70%);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:16px;overflow:hidden}
+body::before{content:"";position:fixed;inset:0;background:repeating-linear-gradient(0deg,rgba(34,211,238,.035) 0 1px,transparent 1px 4px);pointer-events:none}
+body[data-s=listening]{--c:#38bdf8}body[data-s=thinking]{--c:#818cf8}body[data-s=planning]{--c:#a78bfa}body[data-s=executing]{--c:#22d3ee}body[data-s=approval]{--c:#fbbf24}body[data-s=speaking]{--c:#2dd4bf}body[data-s=success]{--c:#34d399}body[data-s=error]{--c:#f87171}
+header{width:100%;display:flex;justify-content:space-between;align-items:center;font-size:12px;letter-spacing:.25em;color:var(--mut)}
+header b{color:var(--c);letter-spacing:.35em}
+button{font:inherit;color:var(--tx);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.35);border-radius:999px;padding:10px 16px;min-height:44px;cursor:pointer}
+button:focus-visible{outline:2px solid var(--c);outline-offset:2px}
+button[disabled]{opacity:.4}
+main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;width:100%;max-width:480px}
+.orb{position:relative;width:min(58vw,240px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff 0,var(--c) 18%,#0b3a66 60%,#041424 100%);box-shadow:0 0 60px 8px color-mix(in srgb,var(--c) 55%,transparent),inset 0 0 40px rgba(0,0,0,.6);animation:breathe 4s ease-in-out infinite;transition:box-shadow .4s}
+.orb::before,.orb::after{content:"";position:absolute;inset:-14%;border-radius:50%;border:1px solid var(--c);opacity:.5;animation:spin 14s linear infinite;border-top-color:transparent;border-bottom-color:transparent}
+.orb::after{inset:-28%;opacity:.25;animation-duration:22s;animation-direction:reverse}
+body[data-s=listening] .orb{animation:pulse 1s ease-in-out infinite}
+body[data-s=thinking] .orb,body[data-s=planning] .orb,body[data-s=executing] .orb{animation:pulse .6s ease-in-out infinite}
+body[data-s=speaking] .orb{animation:pulse .8s ease-in-out infinite}
+@keyframes breathe{50%{transform:scale(1.04)}}
+@keyframes pulse{50%{transform:scale(1.09)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+#status{font-size:13px;letter-spacing:.3em;text-transform:uppercase;color:var(--c)}
+#log{width:100%;min-height:5.5em;max-height:30vh;overflow:auto;text-align:center;font-size:17px;line-height:1.45}
+#log .me{color:var(--mut);font-size:15px;margin-bottom:6px}
+#note{font-size:12px;color:var(--mut);text-align:center;min-height:1.4em}
+footer{width:100%;max-width:480px;display:flex;flex-direction:column;align-items:center;gap:12px}
+#mic{width:76px;height:76px;padding:0;border-width:2px;font-size:30px;border-color:var(--c);box-shadow:0 0 24px color-mix(in srgb,var(--c) 45%,transparent)}
+.row{display:flex;gap:10px;width:100%}
+#txt{flex:1;min-width:0;background:rgba(255,255,255,.04);border:1px solid rgba(34,211,238,.25);border-radius:999px;color:var(--tx);padding:10px 16px;font:inherit;font-size:16px;min-height:44px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-s="idle">
+<header><b>JARVIS</b><button id="lang" aria-label="Switch language">EN</button></header>
+<main>
+  <div class="orb" aria-hidden="true"></div>
+  <div id="status" role="status" aria-live="polite">Idle</div>
+  <div id="log" aria-live="polite"></div>
+  <div id="note"></div>
+</main>
+<footer>
+  <div class="row">
+    <input id="txt" type="text" placeholder="Or type a command…" aria-label="Type a command" enterkeyhint="send">
+    <button id="send">Send</button>
+  </div>
+  <div class="row" style="justify-content:center;align-items:center">
+    <button id="stop" disabled>Stop speaking</button>
+    <button id="mic" aria-label="Tap to talk">🎙</button>
+  </div>
+</footer>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var LABEL={idle:'Idle',listening:'Listening',thinking:'Thinking',planning:'Planning',executing:'Executing',approval:'Waiting for approval',speaking:'Speaking',success:'Done',error:'Error'};
+var lang='en',rec=null,listening=false;
+var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+var tts=window.speechSynthesis;
+function set(s){document.body.dataset.s=s;$('status').textContent=LABEL[s];$('stop').disabled=!(s==='speaking')}
+function note(t){$('note').textContent=t||''}
+function show(me,ai){var l=$('log');l.innerHTML='';var a=document.createElement('div');a.className='me';a.textContent=me;l.appendChild(a);var b=document.createElement('div');b.textContent=ai||'';l.appendChild(b)}
+$('lang').onclick=function(){lang=lang==='en'?'bn':'en';this.textContent=lang==='en'?'EN':'বাং';note(lang==='en'?'Listening language: English':'শোনার ভাষা: বাংলা')};
+function speak(t){
+  if(!tts){set('idle');note('Text-to-speech is not supported in this browser.');return}
+  tts.cancel();
+  var u=new SpeechSynthesisUtterance(t);u.lang=lang==='bn'?'bn-BD':'en-US';
+  var v=tts.getVoices().filter(function(x){return x.lang.toLowerCase().indexOf(lang)===0})[0];
+  if(v)u.voice=v;else if(lang==='bn')note('No Bengali voice installed on this phone; using the default voice.');
+  u.onstart=function(){set('speaking')};
+  u.onend=function(){set('idle')};
+  u.onerror=function(){set('idle')};
+  set('speaking');tts.speak(u);
+}
+var hist=[];
+function handle(text){
+  text=(text||'').trim();if(!text)return;
+  var pc=localStorage.getItem('jv_pc');
+  if(!pc){pc=prompt('Enter your JARVIS passcode');if(!pc){set('idle');return}localStorage.setItem('jv_pc',pc)}
+  set('thinking');show(text,'…');
+  fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,lang:lang,passcode:pc,history:hist.slice(-6)})})
+  .then(function(r){return r.json().then(function(d){return{ok:r.ok,s:r.status,d:d}})})
+  .then(function(x){
+    if(!x.ok){if(x.s===401)localStorage.removeItem('jv_pc');throw new Error(x.d.error||'Request failed')}
+    hist.push({role:'user',content:text},{role:'assistant',content:x.d.reply});
+    show(text,x.d.reply);speak(x.d.reply);
+  })
+  .catch(function(e){set('error');note(e.message);show(text,'')});
+}
+function stopListen(){if(rec){try{rec.stop()}catch(e){}}listening=false}
+$('mic').onclick=function(){
+  if(listening){stopListen();return}
+  if(tts)tts.cancel();
+  if(!SR){set('error');note('Speech recognition is not supported here. Use Chrome on Android, or type below.');return}
+  rec=new SR();rec.lang=lang==='bn'?'bn-BD':'en-US';rec.interimResults=true;rec.maxAlternatives=1;
+  var finalText='',got=false;
+  rec.onstart=function(){listening=true;set('listening');note('')};
+  rec.onresult=function(e){var t='';for(var i=0;i<e.results.length;i++)t+=e.results[i][0].transcript;finalText=t;got=true;$('log').textContent=t};
+  rec.onerror=function(e){listening=false;var m={'not-allowed':'Microphone permission denied. Allow it in Chrome site settings.','service-not-allowed':'Microphone permission denied. Allow it in Chrome site settings.','no-speech':'I did not hear anything. Tap and try again.','audio-capture':'No microphone found.','network':'Speech recognition needs an internet connection.','language-not-supported':'That language is not supported for speech input.'};set('error');note(m[e.error]||'Speech error: '+e.error)};
+  rec.onend=function(){listening=false;if(document.body.dataset.s==='listening'){if(got)handle(finalText);else set('idle')}};
+  try{rec.start()}catch(e){set('error');note('Could not start the microphone.')}
+};
+$('stop').onclick=function(){if(tts)tts.cancel();set('idle')};
+function sendTyped(){var v=$('txt').value;$('txt').value='';handle(v)}
+$('send').onclick=sendTyped;
+$('txt').addEventListener('keydown',function(e){if(e.key==='Enter')sendTyped()});
+if(!SR)note('Voice input is unavailable in this browser. Typing still works.');
+if(tts&&tts.onvoiceschanged!==undefined)tts.onvoiceschanged=function(){};
+})();
+</script>
+</body>
+</html>
