@@ -6,7 +6,7 @@ export default async function handler(req: any, res: any) {
 
   const key = process.env.GEMINI_API_KEY;
   const pass = process.env.APP_PASSCODE;
-  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
   if (!key || !pass) {
     return res.status(500).json({ error: "Server not configured: set GEMINI_API_KEY and APP_PASSCODE" });
   }
